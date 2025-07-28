@@ -23,4 +23,8 @@ enable_testing()
 add_executable(graph_typed_graphs_test test_graph_typed_graphs.cpp)
 target_link_libraries(graph_typed_graphs_test PRIVATE graph_adjacency_list GTest::gtest_main)
 include(GoogleTest)
-gtest_discover_tests(graph_typed_graphs_test) 
+gtest_discover_tests(graph_typed_graphs_test)
+
+# Benchmark app
+add_executable(benchmark_graph benchmark_graph.cpp)
+target_link_libraries(benchmark_graph PRIVATE graph_adjacency_list) 

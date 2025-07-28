@@ -4,6 +4,16 @@
 #include <set>
 #include <algorithm>
 
+/*
+2M x 15 edges
+Building base adjacency list...
+Running BFS
+adjacency_list: Visited nodes: 2000000
+adjacency_list: BFS wall time: 16.1742 seconds
+=== Benchmark results ===
+Peak RSS        : 454.117 MiB
+Peak live heap  : 340.765 MiB
+*/
 template <typename T>
 class GraphAdjacencyList {
 public:
@@ -87,6 +97,14 @@ public:
             vertices.insert(vertex);
         }
         return vertices;
+    }
+
+    std::size_t count_edges() const {
+        std::size_t count = 0;
+        for (const auto& [_, neighbors] : adj_list_) {
+            count += neighbors.size();
+        }
+        return count;
     }
 
 private:

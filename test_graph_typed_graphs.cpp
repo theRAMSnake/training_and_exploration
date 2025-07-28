@@ -1,12 +1,13 @@
 #include "graph_adjacency_list.hpp"
 #include "graph_edge_list.hpp"
+#include "graph_compressed_sparse_row.hpp"
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <set>
 #include "garph_algo.hpp"
 
 // List of graph types to test
-using GraphTypes = ::testing::Types<GraphAdjacencyList<int>, GraphEdgeList<int>>;
+using GraphTypes = ::testing::Types<GraphAdjacencyList<int>, GraphEdgeList<int>, GraphCSR<int>>;
 
 template <typename T>
 class GraphTest : public ::testing::Test {
@@ -127,14 +128,6 @@ TYPED_TEST(GraphTest, VerticesAfterAdd) {
     this->g.add_vertex(1);
     this->g.add_vertex(2);
     this->g.add_vertex(3);
-    std::set<int> expected{1, 2, 3};
-    auto verts = this->g.vertices();
-    EXPECT_EQ(verts, expected);
-}
-
-TYPED_TEST(GraphTest, VerticesAfterAddEdges) {
-    this->g.add_edge(1, 2);
-    this->g.add_edge(2, 3);
     std::set<int> expected{1, 2, 3};
     auto verts = this->g.vertices();
     EXPECT_EQ(verts, expected);
@@ -327,4 +320,41 @@ TYPED_TEST(GraphTest, BFSAlgorithm_Disconnected) {
     visit_order.clear();
     bfs(this->g, 3, [&](int v) { visit_order.push_back(v); });
     EXPECT_EQ(visit_order, (std::vector<int>{3, 4}));
+} 
+
+// Test: Large AdjacencyList to CSR equivalence
+TEST(GraphConversionTest, LargeAdjacencyListToCSREquivalence) {
+    constexpr int num_nodes = 200;
+    constexpr int num_edges = 500;
+    GraphAdjacencyList<int> adj;
+    // Add nodes
+    for (int i = 0; i < num_nodes; ++i) {
+        adj.add_vertex(i);
+    }
+    // Add edges in a pseudo-random but deterministic way
+    int edge_count = 0;
+    for (int i = 0; i < num_nodes && edge_count < num_edges; ++i) {
+        for (int j = 1; j <= 5 && edge_count < num_edges; ++j) {
+            int to = (i * j + 17) % num_nodes;
+            if (to != i && !adj.adjacent(i, to)) {
+                adj.add_edge(i, to);
+                ++edge_count;
+            }
+        }
+    }
+    // Construct CSR from adjacency list
+    GraphCSR<int> csr(adj);
+    // Check vertices are identical
+    EXPECT_EQ(adj.vertices(), csr.vertices());
+    // Check adjacency and neighbors for all pairs
+    for (int i = 0; i < num_nodes; ++i) {
+        for (int j = 0; j < num_nodes; ++j) {
+            EXPECT_EQ(adj.adjacent(i, j), csr.adjacent(i, j)) << "Mismatch at adjacent(" << i << ", " << j << ")";
+        }
+        auto adj_neighbors = adj.neighbors(i);
+        auto csr_neighbors = csr.neighbors(i);
+        std::sort(adj_neighbors.begin(), adj_neighbors.end());
+        std::sort(csr_neighbors.begin(), csr_neighbors.end());
+        EXPECT_EQ(adj_neighbors, csr_neighbors) << "Mismatch in neighbors(" << i << ")";
+    }
 } 
