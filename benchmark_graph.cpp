@@ -59,7 +59,7 @@ void run_benchmark(const std::string& graph_name, GraphCSR<int>& graph) {
     std::cout << "Running BFS" << std::endl;
     int visited = 0;
     auto start = std::chrono::steady_clock::now();
-    graph.bfs(0, [&](int) { ++visited; });
+    graph.bfs_bitmask(0, [&](int) { ++visited; });
     auto end = std::chrono::steady_clock::now();
     std::cout << graph_name << ": Visited nodes: " << visited << std::endl;
     std::chrono::duration<double> elapsed = end - start;
