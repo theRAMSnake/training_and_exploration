@@ -5,14 +5,11 @@
 #include <algorithm>
 
 /*
-2M x 15 edges
-Building base adjacency list...
-Running BFS
-adjacency_list: Visited nodes: 2000000
-adjacency_list: BFS wall time: 16.1742 seconds
-=== Benchmark results ===
-Peak RSS        : 454.117 MiB
-Peak live heap  : 340.765 MiB
+ * 2M x 15 edges
+ * adjacency_list: BFS wall time: 16.1742 seconds
+ * 
+ * 4M x 25 edges
+ * adjacency_list: BFS wall time: 50.16 seconds
 */
 template <typename T>
 class GraphAdjacencyList {

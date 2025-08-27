@@ -358,3 +358,40 @@ TEST(GraphConversionTest, LargeAdjacencyListToCSREquivalence) {
         EXPECT_EQ(adj_neighbors, csr_neighbors) << "Mismatch in neighbors(" << i << ")";
     }
 } 
+
+// Test: BFS threaded (bfs_threads) with 102 nodes, 25% connection rate, single component
+TEST(GraphCSRTest, BFSThreaded_102Nodes_25Percent_OneComponent) {
+    constexpr int num_nodes = 102;
+    constexpr double connection_rate = 0.25;
+    GraphAdjacencyList<int> adj;
+    // Add nodes
+    for (int i = 0; i < num_nodes; ++i) {
+        adj.add_vertex(i);
+    }
+    // Ensure single component: connect linearly
+    for (int i = 0; i < num_nodes - 1; ++i) {
+        adj.add_edge(i, i + 1);
+    }
+    // Add additional random edges to reach ~25% connection rate
+    int max_edges = static_cast<int>(num_nodes * (num_nodes - 1) * connection_rate);
+    int edge_count = num_nodes - 1; // already added linear chain
+    for (int i = 0; i < num_nodes && edge_count < max_edges; ++i) {
+        for (int j = 0; j < num_nodes && edge_count < max_edges; ++j) {
+            if (i != j && !adj.adjacent(i, j)) {
+                // Add edge with some probability to reach 25% density
+                if ((i * 97 + j * 31) % 4 == 0) { // deterministic pseudo-random
+                    adj.add_edge(i, j);
+                    ++edge_count;
+                }
+            }
+        }
+    }
+    GraphCSR<int> csr(adj);
+    std::vector<int> visit_order;
+    csr.bfs_threads(0, [&](int v) { visit_order.push_back(v); });
+    std::set<int> visited(visit_order.begin(), visit_order.end());
+    EXPECT_EQ(visited.size(), num_nodes);
+    for (int i = 0; i < num_nodes; ++i) {
+        EXPECT_TRUE(visited.find(i) != visited.end()) << "Node " << i << " not visited";
+    }
+} 

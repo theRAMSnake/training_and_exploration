@@ -6,18 +6,10 @@
 #include <queue>
 #include <fstream>
 #include <iostream>
+#include <barrier>
+#include <thread>
+#include <atomic>
 
-/*
-2M x 15 edges	
-Building base adjacency list...
-Loaded CSR from file: graph_csr.bin
-Running BFS
-csr: Visited nodes: 2000000
-csr: BFS wall time: 12.5187 seconds
-=== Benchmark results ===
-Peak RSS        : 591.625 MiB
-Peak live heap  : 478.094 MiB
-*/
 /* 
  * Stores matrix in a compressed format
  * Example:
@@ -47,8 +39,12 @@ public:
     GraphCSR(const GraphAdjacencyList<T>& graph) {
         values_.reserve(graph.size());
         auto ver_src = graph.vertices();
-        for(auto x : ver_src) {
-            values_.push_back(x);
+        std::unordered_map<T, S> value_to_index;
+        auto iter = ver_src.begin();
+        for(S i = 0; i < static_cast<S>(ver_src.size()); ++i) {
+            values_.push_back(*iter);
+            value_to_index[*iter] = i;
+            ++iter;
         }
 
         row_ptrs_.reserve(graph.size() + 1);
@@ -60,7 +56,7 @@ public:
             std::sort(ns.begin(), ns.end());
 
             for(auto y : ns) {
-                column_indices_.push_back(value_index(y));
+                column_indices_.push_back(value_to_index[y]);
             }
             row_ptrs_.push_back(static_cast<S>(column_indices_.size()));
         }
@@ -227,6 +223,12 @@ public:
         return vertices;
     }
 
+    /*
+     * General purpose BFS algorithm.
+     * 2M x 15 edges	
+     * csr: BFS wall time: 9.98535 seconds
+     * Additional memory: N*S in the worst case.
+     */
     template<typename O>
     void bfs(T start, O observer) {
         auto pos = value_index(start);
@@ -245,11 +247,117 @@ public:
 
             auto [b, e] = row_begin_end(current_pos);
             for (auto i = b; i != e; ++i) {
-                if (visited.find(*i) == visited.end()) {
+                auto [iter, inserted] = visited.insert(*i);
+                if (inserted) {
                     to_visit.push(*i);
-                    visited.insert(*i);
                 }
             }
+        }
+    }
+
+    /*
+     * BFS with bitmask.
+     * Additional memory: always N/8 bytes.
+     * Beats general purpose when average component size is greater than S*8.
+     * For 32 bits S its 32.
+     * 2M x 15 edges	
+     * csr: BFS wall time: 0.233038 seconds
+     * 4M x 25 edges
+     * csr: BFS wall time: 0.723602 seconds
+     * Improvements history:
+     * 1. Removed set and replaced with bitmask. 9.98s -> 0.23s
+     */
+    template<typename O>
+    void bfs_bitmask(T start, O observer) {
+        auto pos = value_index(start);
+
+        std::vector<bool> visited(size(), false);
+        visited[pos] = true;
+
+        std::queue<S> to_visit;
+        to_visit.push(pos);
+
+        while (!to_visit.empty()) {
+            const auto current_pos = to_visit.front();
+            to_visit.pop();
+
+            observer(values_[current_pos]);
+
+            auto [b, e] = row_begin_end(current_pos);
+            for (auto i = b; i != e; ++i) {
+                if (!visited[*i]) {
+                    visited[*i] = true;
+                    to_visit.push(*i);
+                }
+            }
+        }
+    }
+
+    /*
+     * BFS with threads.
+     * 4M x 25 edges
+     * csr: BFS wall time: 0.25 seconds
+     */
+    template<typename O>
+    void bfs_threads(T start, O observer) {
+        const auto num_threads = 4;
+
+        auto pos = value_index(start);
+        std::vector<std::atomic<std::uint64_t>> visited(size() / 64 + 1);
+
+        std::vector<S> to_visit;
+        to_visit.push_back(pos);
+        observer(values_[pos]);
+        visited[pos / 64].fetch_or(std::uint64_t(1) << pos % 64);
+
+        std::vector<S> next_visit[num_threads];
+
+        auto sync_func = [&]() noexcept {
+            to_visit.clear();
+            for(auto i = 0; i < num_threads; ++i) {
+                to_visit.insert(to_visit.end(), next_visit[i].begin(), next_visit[i].end());
+                next_visit[i].clear();
+            }
+
+            // One might think that by sorting to visit list we will improve cache locality,
+            // as we will be visiting nodes that are close to each other and the array will be
+            // split in 4 almost equal non intersecting parts.
+            // However, the experiment shows that we can be 40% faster without sorting here.
+            //std::sort(to_visit.begin(), to_visit.end());
+
+            for(auto x : to_visit) {
+                observer(values_[x]);
+            }
+        };
+
+        std::barrier barrier(num_threads, sync_func);
+
+        const auto thread_func = [&](auto idx) {
+           while(!to_visit.empty()) {
+             const auto thread_share = to_visit.size() / num_threads;
+             const auto my_start = idx * thread_share;
+             const auto my_end = idx == num_threads - 1 ? to_visit.size() : my_start + thread_share;
+
+             for(auto i = my_start; i != my_end; ++i) {
+                auto v = to_visit[i];
+                auto [b, e] = row_begin_end(v);
+                for(auto j = b; j != e; ++j) {
+                    auto n = *j;
+                    auto prev_val = visited[n / 64].fetch_or(std::uint64_t(1) << n % 64);
+                    if((prev_val & (std::uint64_t(1) << n % 64)) == 0) {
+                        next_visit[idx].push_back(n);
+                    }
+                }
+             }
+
+             barrier.arrive_and_wait();
+           }
+        };
+
+        std::vector<std::jthread> threads;
+        threads.reserve(num_threads);
+        for(int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(thread_func, i);
         }
     }
 
