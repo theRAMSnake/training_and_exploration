@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <set>
 #include <algorithm>
+#include <vector>
 
 /*
  * 2M x 15 edges

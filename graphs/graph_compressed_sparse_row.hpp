@@ -294,9 +294,9 @@ public:
     }
 
     /*
-     * BFS with threads.
+     * BFS with threads. Kept for historical reasons.
      * 4M x 25 edges
-     * csr: BFS wall time: 0.25 seconds
+     * Wall time: 0.39 - 0.42 seconds
      */
     template<typename O>
     void bfs_threads(T start, O observer) {
@@ -343,8 +343,157 @@ public:
                 auto [b, e] = row_begin_end(v);
                 for(auto j = b; j != e; ++j) {
                     auto n = *j;
+                    //TODO: Snake, find a way not to do this.
                     auto prev_val = visited[n / 64].fetch_or(std::uint64_t(1) << n % 64);
                     if((prev_val & (std::uint64_t(1) << n % 64)) == 0) {
+                        next_visit[idx].push_back(n);
+                    }
+                }
+             }
+
+             barrier.arrive_and_wait();
+           }
+        };
+
+        std::vector<std::jthread> threads;
+        threads.reserve(num_threads);
+        for(int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(thread_func, i);
+        }
+    }
+
+    /*
+     * BFS with threads v2.
+     * In this version each thread does not set visited bit (to avoid highly contested sharing), but instead drops
+     * next to visit neighbor to its thread local list. The sync thread merges all the lists and sets the visited bit.
+     * 4M x 25 edges
+     * Wall time: 0.31 - 0.32 seconds
+     * This bottlenecks on:
+     * auto v = to_visit[i];
+     * in the thread function
+     * with 15.933.010      cpu_core/LLC-load-misses/        #   68,89% of all LL-cache accesses
+     */
+    template<typename O>
+    void bfs_threads_v2(T start, O observer) {
+        const auto num_threads = 4;
+
+        auto pos = value_index(start);
+        std::vector<std::uint64_t> visited(size() / 64 + 1);
+
+        std::vector<S> to_visit;
+        to_visit.push_back(pos);
+        observer(values_[pos]);
+        visited[pos / 64] |= std::uint64_t(1) << pos % 64;
+
+        std::vector<S> next_visit[num_threads];
+
+        auto sync_func = [&]() noexcept {
+            to_visit.clear();
+            for(auto i = 0; i < num_threads; ++i) {
+                for(auto x : next_visit[i]) {
+                    if((visited[x / 64] & (std::uint64_t(1) << x % 64)) == 0) {
+                        to_visit.push_back(x);
+                        visited[x / 64] |= std::uint64_t(1) << x % 64;
+                    }
+                }
+                next_visit[i].clear();
+            }
+
+            // One might think that by sorting to visit list we will improve cache locality,
+            // as we will be visiting nodes that are close to each other and the array will be
+            // split in 4 almost equal non intersecting parts.
+            // However, the experiment shows that we can be 40% faster without sorting here.
+            //std::sort(to_visit.begin(), to_visit.end());
+
+            for(auto x : to_visit) {
+                observer(values_[x]);
+            }
+        };
+
+        std::barrier barrier(num_threads, sync_func);
+
+        const auto thread_func = [&](auto idx) {
+           while(!to_visit.empty()) {
+             const auto thread_share = to_visit.size() / num_threads;
+             const auto my_start = idx * thread_share;
+             const auto my_end = idx == num_threads - 1 ? to_visit.size() : my_start + thread_share;
+
+             for(auto i = my_start; i != my_end; ++i) {
+                auto v = to_visit[i];
+                auto [b, e] = row_begin_end(v);
+                for(auto j = b; j != e; ++j) {
+                    auto n = *j;
+                    if((visited[n / 64] & (std::uint64_t(1) << n % 64)) == 0) {
+                        next_visit[idx].push_back(n);
+                    }
+                }
+             }
+
+             barrier.arrive_and_wait();
+           }
+        };
+
+        std::vector<std::jthread> threads;
+        threads.reserve(num_threads);
+        for(int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(thread_func, i);
+        }
+    }
+
+    /*
+     * BFS with threads v3.
+     * In this version the share of the visiting list for the iteration is changed from a fixed percentage, i.e.
+     * first thread iterates first 25%, second - 25-50% and so on,
+     * to the 
+     * first thread iterated modulo of its index elements.
+     * This improves cache locality and reduces LLC load misses as we are keeping only small parts of the visiting list in the cache.
+     * 4M x 25 edges
+     * Wall time: 0.23 - 0.25 seconds
+     * Bottleneck (1):
+     * if((visited[n / 64] & (std::uint64_t(1) << n % 64)) == 0)
+     * It accounts for 40% exec time and LLC load misses.
+     * Other potential bottleneck (2): 
+     * I see the hotspot for hitm loads in "next_visit[idx].push_back(n);" that is possibly explained with the size vs capacity check in
+     * each vector push_back, as next_visit vectors are in array and might be part of the same cache line. Fixing this degrades performance.
+     */
+    template<typename O>
+    void bfs_threads_v3(T start, O observer) {
+        const auto num_threads = 4;
+
+        auto pos = value_index(start);
+        std::vector<std::uint64_t> visited(size() / 64 + 1);
+
+        std::vector<S> to_visit;
+        to_visit.push_back(pos);
+        observer(values_[pos]);
+        visited[pos / 64] |= std::uint64_t(1) << pos % 64;
+
+        std::vector<S> next_visit[num_threads];
+
+        auto sync_func = [&]() noexcept {
+            to_visit.clear();
+            for(auto i = 0; i < num_threads; ++i) {
+                for(auto x : next_visit[i]) {
+                    if((visited[x / 64] & (std::uint64_t(1) << x % 64)) == 0) {
+                        to_visit.push_back(x);
+                        observer(values_[x]);
+                        visited[x / 64] |= std::uint64_t(1) << x % 64;
+                    }
+                }
+                next_visit[i].clear();
+            }
+        };
+
+        std::barrier barrier(num_threads, sync_func);
+
+        const auto thread_func = [&](auto idx) {
+           while(!to_visit.empty()) {
+             for(auto i = idx; i < to_visit.size(); i += num_threads) {
+                auto v = to_visit[i];
+                auto [b, e] = row_begin_end(v);
+                for(auto j = b; j != e; ++j) {
+                    auto n = *j;
+                    if((visited[n / 64] & (std::uint64_t(1) << n % 64)) == 0) {
                         next_visit[idx].push_back(n);
                     }
                 }
