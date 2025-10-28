@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.14)
+project(LocklessDataStructures LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_BUILD_TYPE Debug)
+
+# GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# Main library (header-only)
+add_library(lockless_ordered_list INTERFACE)
+target_include_directories(lockless_ordered_list INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Unit tests
+enable_testing()
+add_executable(test_list ordered_list/test_list.cpp)
+target_link_libraries(test_list PRIVATE lockless_ordered_list GTest::gtest_main)
+include(GoogleTest)
+gtest_discover_tests(test_list)
