@@ -20,9 +20,23 @@ FetchContent_MakeAvailable(googletest)
 add_library(lockless_ordered_list INTERFACE)
 target_include_directories(lockless_ordered_list INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(lockless_bounded_queue INTERFACE)
+target_include_directories(lockless_bounded_queue INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(lockless_unbounded_queue INTERFACE)
+target_include_directories(lockless_unbounded_queue INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # Unit tests
 enable_testing()
 add_executable(test_list ordered_list/test_list.cpp)
 target_link_libraries(test_list PRIVATE lockless_ordered_list GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(test_list)
+
+add_executable(test_bounded_queue queue/test_bounded_queue.cpp)
+target_link_libraries(test_bounded_queue PRIVATE lockless_bounded_queue GTest::gtest_main)
+gtest_discover_tests(test_bounded_queue)
+
+add_executable(test_unbounded_queue queue/test_unbounded_queue.cpp)
+target_link_libraries(test_unbounded_queue PRIVATE lockless_unbounded_queue GTest::gtest_main)
+gtest_discover_tests(test_unbounded_queue)
