@@ -26,6 +26,12 @@ target_include_directories(lockless_bounded_queue INTERFACE ${CMAKE_CURRENT_SOUR
 add_library(lockless_unbounded_queue INTERFACE)
 target_include_directories(lockless_unbounded_queue INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(lockless_elimination_stack INTERFACE)
+target_include_directories(lockless_elimination_stack INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(lockless_exchanger INTERFACE)
+target_include_directories(lockless_exchanger INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # Unit tests
 enable_testing()
 add_executable(test_list ordered_list/test_list.cpp)
@@ -40,3 +46,11 @@ gtest_discover_tests(test_bounded_queue)
 add_executable(test_unbounded_queue queue/test_unbounded_queue.cpp)
 target_link_libraries(test_unbounded_queue PRIVATE lockless_unbounded_queue GTest::gtest_main)
 gtest_discover_tests(test_unbounded_queue)
+
+add_executable(test_elimination_stack stack/test_elimination_stack.cpp)
+target_link_libraries(test_elimination_stack PRIVATE lockless_elimination_stack GTest::gtest_main)
+gtest_discover_tests(test_elimination_stack)
+
+add_executable(test_lockfree_exchanger stack/test_lockfree_exchanger.cpp)
+target_link_libraries(test_lockfree_exchanger PRIVATE lockless_exchanger GTest::gtest_main)
+gtest_discover_tests(test_lockfree_exchanger)
