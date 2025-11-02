@@ -32,6 +32,9 @@ target_include_directories(lockless_elimination_stack INTERFACE ${CMAKE_CURRENT_
 add_library(lockless_exchanger INTERFACE)
 target_include_directories(lockless_exchanger INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(lockless_combining_tree INTERFACE)
+target_include_directories(lockless_combining_tree INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # Unit tests
 enable_testing()
 add_executable(test_list ordered_list/test_list.cpp)
@@ -54,3 +57,7 @@ gtest_discover_tests(test_elimination_stack)
 add_executable(test_lockfree_exchanger stack/test_lockfree_exchanger.cpp)
 target_link_libraries(test_lockfree_exchanger PRIVATE lockless_exchanger GTest::gtest_main)
 gtest_discover_tests(test_lockfree_exchanger)
+
+add_executable(test_combining_tree combining_tree/test_combining_tree.cpp)
+target_link_libraries(test_combining_tree PRIVATE lockless_combining_tree GTest::gtest_main)
+gtest_discover_tests(test_combining_tree)
